@@ -1,0 +1,71 @@
+from ultralytics import YOLO
+import cv2
+
+
+face_detector = YOLO("yolov8n.pt")  
+
+def detect_faces(image_path):
+    results = face_detector(image_path)
+    boxes = results[0].boxes.xyxy.cpu().numpy() 
+    return boxes
+
+from facenet_pytorch import InceptionResnetV1, MTCNN
+import torch
+from PIL import Image
+
+
+facenet = InceptionResnetV1(pretrained='vggface2').eval()
+mtcnn = MTCNN(image_size=160, margin=20)
+
+def get_embedding(face_img):
+    img_cropped = mtcnn(face_img)
+    if img_cropped is None:
+        return None
+    embedding = facenet(img_cropped.unsqueeze(0))
+    return embedding.detach().numpy()[0]
+    
+known_embeddings = {
+    "mohit_normal": get_embedding(Image.open("mohit.jpg")),
+    "mohit_masked": get_embedding(Image.open("mohit_mask.jpg")),
+    "mohit_capped": get_embedding(Image.open("mohit_cap.jpg")),
+}
+from sklearn.metrics.pairwise import cosine_similarity
+import numpy as np
+
+def recognize_face(test_embedding, known_embeddings, threshold=0.6):
+    best_match = None
+    max_sim = -1
+
+    for name, embedding in known_embeddings.items():
+        sim = cosine_similarity([test_embedding], [embedding])[0][0]
+        if sim > max_sim and sim > threshold:
+            max_sim = sim
+            best_match = name
+
+    return best_match
+    correct = 0
+
+test_data = [
+   
+]
+total = len(test_data)
+
+predictions = []
+ground_truths = []
+
+for img_path, true_name in test_data:
+    test_embedding = get_embedding(Image.open(img_path))
+    predicted = recognize_face(test_embedding, known_embeddings)
+    predictions.append(predicted)
+    ground_truths.append(true_name)
+
+correct = 0
+total = 0
+
+for predicted, actual in zip(predictions, ground_truths):
+    if predicted == actual:
+        correct += 1
+    total += 1
+
+accuracy = correct / total * 100 if total > 0 else 0
+print(f"Accuracy: {accuracy:.2f}%")
